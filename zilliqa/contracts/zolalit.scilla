@@ -1,0 +1,231 @@
+(***************************************************)
+(*                 Scilla version                  *)
+(***************************************************)
+
+scilla_version 0
+
+(***************************************************)
+(*               Associated library                *)
+(***************************************************)
+library Zola_Literature
+
+let one_msg =
+  fun (msg : Message) =>
+  let nil_msg = Nil {Message} in
+    Cons {Message} msg nil_msg
+
+let not_empty = 
+  fun (str : String) =>
+  let empt = "" in
+  builtin eq empt str
+    
+let pay_failure = Int32 1 
+let pay_success = Int32 2
+let already_backed_code = Int32 3
+let funds_withdrawn = Int32 42
+let cannot_get_funds = Int32 404
+let not_owner_code = Int32 400
+let text_added = Int32 92
+let text_removed = Int32 91
+let fan_added = Int32 96
+let text_add_fail = Int32 20
+let text_support_fail = Int32 403
+let convert_zil = Uint128 1000000000000
+
+
+(***************************************************)
+(*             The contract definition             *)
+(***************************************************)
+contract Zola_Literature
+
+(*  Parameters *)
+(owner:ByStr20,
+description:String,
+artist:String)
+
+(* Mutable fields *)
+field b_texts : Map String String = Emp String String
+field texts_support : Map String Uint128 = Emp String Uint128
+field backers : Map ByStr20 Uint128 = Emp ByStr20 Uint128
+field fans : Map String Uint128 = Emp String Uint128
+field funded : Bool = False
+field total_funded : Uint128 = Uint128 0
+
+(*Events*)
+procedure AddTextEvent (error_code : Int32)
+  success = builtin eq error_code text_added;
+  match success with
+  | True =>
+      e = {_eventname : "AddtextSuccess"; caller : _sender;
+         amount : _amount; code : error_code};
+         event e
+  | False =>
+      e = {_eventname : "AddtextFailed"; caller : _sender;
+         amount : _amount; code : error_code};
+         event e
+  end
+end
+procedure RemoveTextEvent (error_code : Int32)
+  success = builtin eq error_code text_removed;
+  match success with
+  | True =>
+      e = {_eventname : "RemovetextSuccess"; caller : _sender;
+         amount : _amount; code : error_code};
+         event e
+  | False =>
+      e = {_eventname : "RemovetextFailed"; caller : _sender;
+         amount : _amount; code : error_code};
+         event e
+  end
+end
+procedure DonationEvent (failure : Bool)
+  match failure with
+  | True =>
+      e = {_eventname : "DonationSuccess"; donor : _sender;
+         amount : _amount; code : already_backed_code};
+         event e
+  | False =>
+      e = {_eventname : "DonationSuccess"; donor : _sender;
+         amount : _amount; code : pay_success};
+         event e
+  end
+end
+
+procedure WithdrawFundsFailure (error_code : Int32)
+  e = {_eventname : "GetFundsFailure"; caller : _sender;
+       amount : _amount; code : error_code};
+  event e
+end
+
+procedure SupportTextEvent (error_code : Int32)
+  success = builtin eq error_code pay_success;
+  match success with
+  | True =>
+      e = {_eventname : "SupporttextSuccess"; supporter : _sender;
+         amount : _amount; code : error_code};
+         event e
+  | False =>
+      e = {_eventname : "SupporttextFailed"; supporter : _sender;
+         amount : _amount; code : error_code};
+         event e
+  end
+end
+(*Private methods or smth alike*)
+procedure PerformWithdrawFunds()
+  bal <- _balance;
+  tt = True;
+  funded := tt;
+  
+  msg = { _tag : ""; _recipient : owner; _amount : bal; code : funds_withdrawn};
+  msgs = one_msg msg;
+  send msgs
+end
+
+procedure AddFan(name : String)
+  fo <- exists fans[name];
+  f <- fans[name];
+  
+  match f with 
+    | None =>
+      fans[name] := _amount;
+      msg = { _tag : ""; _recipient : _sender; _amount: Uint128 0; code : fan_added};
+      msgs = one_msg msg;
+      send msgs
+    | Some fan =>
+      all = builtin add _amount fan;
+      fans[name] := all;
+      msg = { _tag : ""; _recipient : _sender; _amount: Uint128 0; code : pay_success};
+      msgs = one_msg msg;
+      send msgs 
+  end
+end
+
+procedure SendToText( name : String)
+  s <- texts_support[name];
+  match s with
+    | None =>
+      SupportTextEvent text_support_fail
+    | Some b =>
+      accept;
+      am = _amount;
+      zila = builtin div am convert_zil;
+      tot = builtin add b zila;
+      texts_support[name] := tot; 
+      bal <- _balance;
+      zbal = builtin div bal convert_zil;
+      total_funded := zbal; 
+      SupportTextEvent pay_success
+  end
+end
+
+(*Transitions*)
+
+(*[OwnerOnly]*)
+(*Add text with title and lyrics should point to a resource like url*)
+transition AddText( title: String, lyrics : String )
+  is_owner = builtin eq owner _sender;
+  match is_owner with
+  | False =>
+    AddTextEvent not_owner_code
+  | True =>
+    b_texts[title] := lyrics;
+    zer = Uint128 0;
+    texts_support[title] := zer;
+    AddTextEvent text_added
+  end
+end
+
+(*[OwnerOnly]*)
+(*Removes text by title*)
+transition RemoveText( title: String)
+  is_owner = builtin eq owner _sender;
+  match is_owner with
+  | False =>
+    RemoveTextEvent not_owner_code
+  | True =>
+    delete b_texts[title];
+    RemoveTextEvent text_added
+  end
+end
+
+(*[OwnerOnly]*)
+(*Withdraw all funds from contract*)
+transition WithdrawFunds ()
+  is_owner = builtin eq owner _sender;
+  match is_owner with
+  | False =>
+    WithdrawFundsFailure not_owner_code
+  | True =>
+    PerformWithdrawFunds
+  end
+end
+
+transition Donate ( name : String )
+  accept;
+  o <- exists backers[_sender];
+  b <- backers[_sender];
+  AddFan name;
+  bal <- _balance;
+  newtot = builtin div bal convert_zil;
+  total_funded := newtot;    
+  match b with
+  | None =>
+    backers[_sender] := _amount;
+    DonationEvent o
+  | Some b =>
+    tot = builtin add b _amount;
+    backers[_sender] := tot;
+    DonationEvent o
+  end
+end
+
+(*Support text by name*)
+transition SupportText ( name : String )
+  o <- exists texts_support[name];
+  match o with 
+  | True =>
+    SendToText name
+  | False =>
+    SupportTextEvent text_support_fail
+  end
+end

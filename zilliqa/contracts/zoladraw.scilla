@@ -1,0 +1,231 @@
+(***************************************************)
+(*                 Scilla version                  *)
+(***************************************************)
+
+scilla_version 0
+
+(***************************************************)
+(*               Associated library                *)
+(***************************************************)
+library Zola_Draw
+
+let one_msg =
+  fun (msg : Message) =>
+  let nil_msg = Nil {Message} in
+    Cons {Message} msg nil_msg
+
+let not_empty = 
+  fun (str : String) =>
+  let empt = "" in
+  builtin eq empt str
+    
+let pay_failure = Int32 1 
+let pay_success = Int32 2
+let already_backed_code = Int32 3
+let funds_withdrawn = Int32 42
+let cannot_get_funds = Int32 404
+let not_owner_code = Int32 400
+let sketch_added = Int32 92
+let sketch_removed = Int32 91
+let fan_added = Int32 96
+let sketch_add_fail = Int32 20
+let sketch_support_fail = Int32 403
+let convert_zil = Uint128 1000000000000
+
+
+(***************************************************)
+(*             The contract definition             *)
+(***************************************************)
+contract Zola_Draw
+
+(*  Parameters *)
+(owner:ByStr20,
+description:String,
+artist:String)
+
+(* Mutable fields *)
+field b_sketches : Map String String = Emp String String
+field sketches_support : Map String Uint128 = Emp String Uint128
+field backers : Map ByStr20 Uint128 = Emp ByStr20 Uint128
+field fans : Map String Uint128 = Emp String Uint128
+field funded : Bool = False
+field total_funded : Uint128 = Uint128 0
+
+(*Events*)
+procedure AddSketchEvent (error_code : Int32)
+  success = builtin eq error_code sketch_added;
+  match success with
+  | True =>
+      e = {_eventname : "Addsketchesuccess"; caller : _sender;
+         amount : _amount; code : error_code};
+         event e
+  | False =>
+      e = {_eventname : "AddsketchFailed"; caller : _sender;
+         amount : _amount; code : error_code};
+         event e
+  end
+end
+procedure RemoveSketchEvent (error_code : Int32)
+  success = builtin eq error_code sketch_removed;
+  match success with
+  | True =>
+      e = {_eventname : "Removesketchesuccess"; caller : _sender;
+         amount : _amount; code : error_code};
+         event e
+  | False =>
+      e = {_eventname : "RemovesketchFailed"; caller : _sender;
+         amount : _amount; code : error_code};
+         event e
+  end
+end
+procedure DonationEvent (failure : Bool)
+  match failure with
+  | True =>
+      e = {_eventname : "DonationSuccess"; donor : _sender;
+         amount : _amount; code : already_backed_code};
+         event e
+  | False =>
+      e = {_eventname : "DonationSuccess"; donor : _sender;
+         amount : _amount; code : pay_success};
+         event e
+  end
+end
+
+procedure WithdrawFundsFailure (error_code : Int32)
+  e = {_eventname : "GetFundsFailure"; caller : _sender;
+       amount : _amount; code : error_code};
+  event e
+end
+
+procedure SupportSketchEvent (error_code : Int32)
+  success = builtin eq error_code pay_success;
+  match success with
+  | True =>
+      e = {_eventname : "Supportsketchesuccess"; supporter : _sender;
+         amount : _amount; code : error_code};
+         event e
+  | False =>
+      e = {_eventname : "SupportsketchFailed"; supporter : _sender;
+         amount : _amount; code : error_code};
+         event e
+  end
+end
+(*Private methods or smth alike*)
+procedure PerformWithdrawFunds()
+  bal <- _balance;
+  tt = True;
+  funded := tt;
+  
+  msg = { _tag : ""; _recipient : owner; _amount : bal; code : funds_withdrawn};
+  msgs = one_msg msg;
+  send msgs
+end
+
+procedure AddFan(name : String)
+  fo <- exists fans[name];
+  f <- fans[name];
+  
+  match f with 
+    | None =>
+      fans[name] := _amount;
+      msg = { _tag : ""; _recipient : _sender; _amount: Uint128 0; code : fan_added};
+      msgs = one_msg msg;
+      send msgs
+    | Some fan =>
+      all = builtin add _amount fan;
+      fans[name] := all;
+      msg = { _tag : ""; _recipient : _sender; _amount: Uint128 0; code : pay_success};
+      msgs = one_msg msg;
+      send msgs 
+  end
+end
+
+procedure SendToSketch( name : String)
+  s <- sketches_support[name];
+  match s with
+    | None =>
+      SupportSketchEvent sketch_support_fail
+    | Some b =>
+      accept;
+      am = _amount;
+      zila = builtin div am convert_zil;
+      tot = builtin add b zila;
+      sketches_support[name] := tot; 
+      bal <- _balance;
+      zbal = builtin div bal convert_zil;
+      total_funded := zbal; 
+      SupportSketchEvent pay_success
+  end
+end
+
+(*Transitions*)
+
+(*[OwnerOnly]*)
+(*Add sketch with title and lyrics should point to a resource like url*)
+transition AddSketch( title: String, lyrics : String )
+  is_owner = builtin eq owner _sender;
+  match is_owner with
+  | False =>
+    AddSketchEvent not_owner_code
+  | True =>
+    b_sketches[title] := lyrics;
+    zer = Uint128 0;
+    sketches_support[title] := zer;
+    AddSketchEvent sketch_added
+  end
+end
+
+(*[OwnerOnly]*)
+(*Removes sketch by title*)
+transition RemoveSketch( title: String)
+  is_owner = builtin eq owner _sender;
+  match is_owner with
+  | False =>
+    RemoveSketchEvent not_owner_code
+  | True =>
+    delete b_sketches[title];
+    RemoveSketchEvent sketch_added
+  end
+end
+
+(*[OwnerOnly]*)
+(*Withdraw all funds from contract*)
+transition WithdrawFunds ()
+  is_owner = builtin eq owner _sender;
+  match is_owner with
+  | False =>
+    WithdrawFundsFailure not_owner_code
+  | True =>
+    PerformWithdrawFunds
+  end
+end
+
+transition Donate ( name : String )
+  accept;
+  o <- exists backers[_sender];
+  b <- backers[_sender];
+  AddFan name;
+  bal <- _balance;
+  newtot = builtin div bal convert_zil;
+  total_funded := newtot;    
+  match b with
+  | None =>
+    backers[_sender] := _amount;
+    DonationEvent o
+  | Some b =>
+    tot = builtin add b _amount;
+    backers[_sender] := tot;
+    DonationEvent o
+  end
+end
+
+(*Support sketch by name*)
+transition SupportSketch ( name : String )
+  o <- exists sketches_support[name];
+  match o with 
+  | True =>
+    SendToSketch name
+  | False =>
+    SupportSketchEvent sketch_support_fail
+  end
+end
