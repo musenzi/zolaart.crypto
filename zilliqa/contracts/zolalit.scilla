@@ -19,19 +19,21 @@ let not_empty =
   let empt = "" in
   builtin eq empt str
     
-let pay_failure = Int32 1 
-let pay_success = Int32 2
-let already_backed_code = Int32 3
-let funds_withdrawn = Int32 42
-let cannot_get_funds = Int32 404
-let not_owner_code = Int32 400
-let text_added = Int32 92
-let text_removed = Int32 91
-let fan_added = Int32 96
-let mail_changed = Int32 993
-let text_add_fail = Int32 20
-let text_support_fail = Int32 403
-let convert_zil = Uint128 1000000000000
+  let pay_failure = Int32 1 
+  let pay_success = Int32 2
+  let already_backed_code = Int32 3
+  let funds_withdrawn = Int32 42
+  let cannot_get_funds = Int32 404
+  let not_owner_code = Int32 400
+  let text_added = Int32 92
+  let text_removed = Int32 91
+  let text_updated = Int32 91
+  let fan_added = Int32 96
+  let mail_changed = Int32 993
+  let text_add_fail = Int32 501
+  let text_update_fail = Int32 502
+  let text_support_fail = Int32 503
+  let convert_zil = Uint128 1000000000000
 
 
 (***************************************************)
@@ -50,7 +52,6 @@ field b_texts : Map String String = Emp String String
 field texts_support : Map String Uint128 = Emp String Uint128
 field backers : Map ByStr20 Uint128 = Emp ByStr20 Uint128
 field fans : Map String Uint128 = Emp String Uint128
-field funded : Bool = False
 field total_funded : Uint128 = Uint128 0
 field curr_email : String = origin_mail
 
@@ -77,6 +78,19 @@ procedure RemoveTextEvent (error_code : Int32)
          event e
   | False =>
       e = {_eventname : "RemovetextFailed"; caller : _sender;
+         amount : _amount; code : error_code};
+         event e
+  end
+end
+procedure UpdateTextEvent (error_code : Int32)
+  success = builtin eq error_code text_updated;
+  match success with
+  | True =>
+      e = {_eventname : "UpdateTextSuccess"; caller : _sender;
+         amount : _amount; code : error_code};
+         event e
+  | False =>
+      e = {_eventname : "UpdateTextFailed"; caller : _sender;
          amount : _amount; code : error_code};
          event e
   end
@@ -131,8 +145,6 @@ end
 (*Private methods or smth alike*)
 procedure PerformWithdrawFunds()
   bal <- _balance;
-  tt = True;
-  funded := tt;
   
   msg = { _tag : ""; _recipient : owner; _amount : bal; code : funds_withdrawn};
   msgs = one_msg msg;
@@ -179,14 +191,14 @@ end
 (*Transitions*)
 
 (*[OwnerOnly]*)
-(*Add text with title and lyrics should point to a resource like url*)
-transition AddText( title: String, lyrics : String )
+(*Add text with title and resource should point to a resource like url*)
+transition AddText( title: String, resource : String )
   is_owner = builtin eq owner _sender;
   match is_owner with
   | False =>
     AddTextEvent not_owner_code
   | True =>
-    b_texts[title] := lyrics;
+    b_texts[title] := resource;
     zer = Uint128 0;
     texts_support[title] := zer;
     AddTextEvent text_added
@@ -205,7 +217,24 @@ transition RemoveText( title: String)
     RemoveTextEvent text_added
   end
 end
-
+(*[OwnerOnly]*)
+(*Updates text by title*)
+transition UpdateText( title: String,newres : String)
+  is_owner = builtin eq owner _sender;
+  match is_owner with
+  | False =>
+    UpdateTextEvent not_owner_code
+  | True =>
+    us <- exists b_texts[title];
+    match us with
+    | True =>
+    b_texts[title] := newres;
+    UpdateTextEvent text_updated
+    | False =>
+    UpdateTextEvent text_update_fail
+    end
+  end
+end
 
 (*[OwnerOnly]*)
 (*Changes curr_mail*)

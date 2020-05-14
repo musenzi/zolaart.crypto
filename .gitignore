@@ -16,3 +16,5 @@
 /favicon.ico
 /package.json
 /yarn.lock
+/.vs/Git Repo/config
+/package-lock.json

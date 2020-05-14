@@ -19,19 +19,21 @@ let not_empty =
   let empt = "" in
   builtin eq empt str
     
-let pay_failure = Int32 1 
-let pay_success = Int32 2
-let already_backed_code = Int32 3
-let funds_withdrawn = Int32 42
-let cannot_get_funds = Int32 404
-let not_owner_code = Int32 400
-let sketch_added = Int32 92
-let sketch_removed = Int32 91
-let fan_added = Int32 96
-let mail_changed = Int32 993
-let sketch_add_fail = Int32 20
-let sketch_support_fail = Int32 403
-let convert_zil = Uint128 1000000000000
+  let pay_failure = Int32 1 
+  let pay_success = Int32 2
+  let already_backed_code = Int32 3
+  let funds_withdrawn = Int32 42
+  let cannot_get_funds = Int32 404
+  let not_owner_code = Int32 400
+  let sketch_added = Int32 92
+  let sketch_removed = Int32 91
+  let sketch_updated = Int32 91
+  let fan_added = Int32 96
+  let mail_changed = Int32 993
+  let sketch_add_fail = Int32 501
+  let sketch_update_fail = Int32 502
+  let sketch_support_fail = Int32 503
+  let convert_zil = Uint128 1000000000000
 
 
 (***************************************************)
@@ -50,7 +52,6 @@ field b_sketches : Map String String = Emp String String
 field sketches_support : Map String Uint128 = Emp String Uint128
 field backers : Map ByStr20 Uint128 = Emp ByStr20 Uint128
 field fans : Map String Uint128 = Emp String Uint128
-field funded : Bool = False
 field total_funded : Uint128 = Uint128 0
 field curr_email : String = origin_mail
 
@@ -77,6 +78,19 @@ procedure RemoveSketchEvent (error_code : Int32)
          event e
   | False =>
       e = {_eventname : "RemovesketchFailed"; caller : _sender;
+         amount : _amount; code : error_code};
+         event e
+  end
+end
+procedure UpdateSketchEvent (error_code : Int32)
+  success = builtin eq error_code sketch_updated;
+  match success with
+  | True =>
+      e = {_eventname : "UpdateSketchSuccess"; caller : _sender;
+         amount : _amount; code : error_code};
+         event e
+  | False =>
+      e = {_eventname : "UpdateSketchFailed"; caller : _sender;
          amount : _amount; code : error_code};
          event e
   end
@@ -131,9 +145,6 @@ end
 (*Private methods or smth alike*)
 procedure PerformWithdrawFunds()
   bal <- _balance;
-  tt = True;
-  funded := tt;
-  
   msg = { _tag : ""; _recipient : owner; _amount : bal; code : funds_withdrawn};
   msgs = one_msg msg;
   send msgs
@@ -179,14 +190,14 @@ end
 (*Transitions*)
 
 (*[OwnerOnly]*)
-(*Add sketch with title and lyrics should point to a resource like url*)
-transition AddSketch( title: String, lyrics : String )
+(*Add sketch with title and resource should point to a resource like url*)
+transition AddSketch( title: String, resource : String )
   is_owner = builtin eq owner _sender;
   match is_owner with
   | False =>
     AddSketchEvent not_owner_code
   | True =>
-    b_sketches[title] := lyrics;
+    b_sketches[title] := resource;
     zer = Uint128 0;
     sketches_support[title] := zer;
     AddSketchEvent sketch_added
@@ -205,7 +216,24 @@ transition RemoveSketch( title: String)
     RemoveSketchEvent sketch_added
   end
 end
-
+(*[OwnerOnly]*)
+(*Updates sketch by title*)
+transition UpdateSketch( title: String,newres : String)
+  is_owner = builtin eq owner _sender;
+  match is_owner with
+  | False =>
+    UpdateSketchEvent not_owner_code
+  | True =>
+    us <- exists b_sketches[title];
+    match us with
+    | True =>
+    b_sketches[title] := newres;
+    UpdateSketchEvent sketch_updated
+    | False =>
+    UpdateSketchEvent sketch_update_fail
+    end
+  end
+end
 (*[OwnerOnly]*)
 (*Changes curr_mail*)
 transition ChangeMail( mail: String)
