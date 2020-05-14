@@ -213,7 +213,7 @@ transition RemoveSketch( title: String)
     RemoveSketchEvent not_owner_code
   | True =>
     delete b_sketches[title];
-    RemoveSketchEvent sketch_added
+    RemoveSketchEvent sketch_removed
   end
 end
 (*[OwnerOnly]*)

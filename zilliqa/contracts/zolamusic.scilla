@@ -213,7 +213,7 @@ transition RemoveSong( title: String)
     RemoveSongEvent not_owner_code
   | True =>
     delete b_songs[title];
-    RemoveSongEvent song_added
+    RemoveSongEvent song_removed
   end
 end
 (*[OwnerOnly]*)

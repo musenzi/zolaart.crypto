@@ -214,7 +214,7 @@ transition RemoveResource( title: String)
     RemoveResourceEvent not_owner_code
   | True =>
     delete b_resources[title];
-    RemoveResourceEvent resource_added
+    RemoveResourceEvent resource_removed
   end
 end
 (*[OwnerOnly]*)

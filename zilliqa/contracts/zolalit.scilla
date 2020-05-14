@@ -214,7 +214,7 @@ transition RemoveText( title: String)
     RemoveTextEvent not_owner_code
   | True =>
     delete b_texts[title];
-    RemoveTextEvent text_added
+    RemoveTextEvent text_removed
   end
 end
 (*[OwnerOnly]*)
