@@ -28,6 +28,7 @@ let not_owner_code = Int32 400
 let sketch_added = Int32 92
 let sketch_removed = Int32 91
 let fan_added = Int32 96
+let mail_changed = Int32 993
 let sketch_add_fail = Int32 20
 let sketch_support_fail = Int32 403
 let convert_zil = Uint128 1000000000000
@@ -41,7 +42,8 @@ contract Zola_Draw
 (*  Parameters *)
 (owner:ByStr20,
 description:String,
-artist:String)
+artist:String,
+origin_mail :String)
 
 (* Mutable fields *)
 field b_sketches : Map String String = Emp String String
@@ -50,6 +52,7 @@ field backers : Map ByStr20 Uint128 = Emp ByStr20 Uint128
 field fans : Map String Uint128 = Emp String Uint128
 field funded : Bool = False
 field total_funded : Uint128 = Uint128 0
+field curr_email : String = origin_mail
 
 (*Events*)
 procedure AddSketchEvent (error_code : Int32)
@@ -110,6 +113,21 @@ procedure SupportSketchEvent (error_code : Int32)
          event e
   end
 end
+
+procedure ChangeMailEvent (error_code : Int32)
+  success = builtin eq error_code mail_changed;
+  match success with
+  | True =>
+      e = {_eventname : "ChangeMailEvent"; supporter : _sender;
+         amount : _amount; code : error_code};
+         event e
+  | False =>
+      e = {_eventname : "ChangeMailEvent"; supporter : _sender;
+         amount : _amount; code : error_code};
+         event e
+  end
+end
+
 (*Private methods or smth alike*)
 procedure PerformWithdrawFunds()
   bal <- _balance;
@@ -185,6 +203,20 @@ transition RemoveSketch( title: String)
   | True =>
     delete b_sketches[title];
     RemoveSketchEvent sketch_added
+  end
+end
+
+(*[OwnerOnly]*)
+(*Changes curr_mail*)
+transition ChangeMail( mail: String)
+  is_owner = builtin eq owner _sender;
+  match is_owner with
+  | False =>
+    ChangeMailEvent not_owner_code
+  | True =>
+    m = mail;
+    curr_email := m;
+    ChangeMailEvent mail_changed
   end
 end
 

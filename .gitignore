@@ -10,3 +10,9 @@
 /images
 /scripts
 /style
+/node_modules
+/.vscode
+*.js
+/favicon.ico
+/package.json
+/yarn.lock
