@@ -120,13 +120,10 @@ end
 procedure SendToResource( name : String)
   s <- resources_support[name];
   match s with
-    | None =>
-      BasicEvent support_fail pay_success
     | Some b =>
       accept;
       am = _amount;
-      zila = builtin div am convert_zil;
-      tot = builtin add b zila;
+      tot = builtin add b _amount;
       resources_support[name] := tot; 
       bal <- _balance;
       zbal = builtin div bal convert_zil;
@@ -305,7 +302,7 @@ transition Donate ( name : String )
   o <- exists backers[_sender];
   b <- backers[_sender];
   AddFan name;
-  AddAmountTotal;
+  AddAmountTotal _amount;
   match b with
   | None =>
     backers[_sender] := _amount;
@@ -323,7 +320,7 @@ transition SupportResource ( name : String )
   match o with 
   | True =>
     SendToResource name;
-    AddAmountTotal
+    AddAmountTotal _amount
   | False =>
     BasicEvent support_fail pay_success
   end
