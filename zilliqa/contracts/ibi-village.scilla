@@ -20,32 +20,32 @@ let not_empty =
   let empt = "" in
   builtin eq empt str
   
-  (* Success *)  
-  let pay_failure = Int32 1 
-  let pay_success = Int32 2
-  let already_member = Int32 3
-  let funds_withdrawn = Int32 42
-  let removed = Int32 91
-  let added = Int32 92
-  let updated = Int32 98
-  let fan_added = Int32 96
-  let mail_changed = Int32 993
-  
-  (* http codes*)
-  let unauthorized = Int32 400
-  let forbidden = Int32 403
-  let not_found = Int32 403
-  let not_found = Int32 500
-  (* The lemongrab code is a must!!!*)
-  let unacceptable = Int32 406
-  (* Custom *)
-  let add_fail = Int32 701
-  let update_fail = Int32 702
-  let support_fail = Int32 703
-  let big_spender = Int32 9000
+   (* Success *)  
+   let pay_failure = Int32 1 
+   let pay_success = Int32 2
+   let already_member = Int32 3
+   let funds_withdrawn = Int32 42
+   let removed = Int32 91
+   let added = Int32 92
+   let updated = Int32 98
+   let fan_added = Int32 96
+   let mail_changed = Int32 993
+   
+   (* http codes*)
+   let unauthorized = Int32 400
+   let forbidden = Int32 403
+   let not_found = Int32 403
+   let server_error = Int32 500
+   (* The lemongrab code is a must!!!*)
+   let unacceptable = Int32 406
+   (* Custom *)
+   let add_fail = Int32 701
+   let remove_fail = Int32 702
+   let update_fail = Int32 703
+   let support_fail = Int32 704
+   let big_spender = Int32 9000
   
   (* Misc *)
-  let convert_zil = Uint128 1000000000000
 
 
 (***************************************************)
@@ -65,16 +65,17 @@ origin_mail :String)
 
 (* Mutable fields *)
 field b_resources : Map String String = Emp String String
-field resources_support : Map String Uint128 = Emp String Uint128
-field backers : Map ByStr20 Uint128 = Emp ByStr20 Uint128
 field fans : Map String Uint128 = Emp String Uint128
-field total_funded : Uint128 = Uint128 0
 field curr_email : String = origin_mail
 field members : Map ByStr20 String = Emp ByStr20 String
-
+(* Funds *)
+field total_funded : Uint128 = Uint128 0
+field total_withdrawn : Uint128 = Uint128 0
+field resources_support : Map String Uint128 = Emp String Uint128
+field backers : Map ByStr20 Uint128 = Emp ByStr20 Uint128
 
 (*Events*)
-procedure GenericEvent (error_code : Int32,exp : Int32)
+procedure BasicEvent (error_code : Int32,exp : Int32)
   success = builtin eq error_code exp;
   match success with
   | True =>
@@ -96,11 +97,21 @@ procedure DonationEvent (failure : Bool)
   event e
 end
 
-(*Private methods or smth alike*)
+(* Funds procedures*)
 
+(* Adding donation amount to total*)
+procedure AddAmountTotal(am : Uint128)
+  tf <- total_funded;
+  newtot = builtin add am tf;
+  total_funded := newtot
+end
+
+(* Withdraw funds from contract *)
 procedure PerformWithdrawFunds()
   bal <- _balance;
-  
+  tw <- total_withdrawn;
+  tot = builtin add bal tw;
+  total_withdrawn := tot;
   msg = { _tag : ""; _recipient : owner; _amount : bal; code : funds_withdrawn};
   msgs = one_msg msg;
   send msgs
@@ -110,7 +121,7 @@ procedure SendToResource( name : String)
   s <- resources_support[name];
   match s with
     | None =>
-      GenericEvent support_fail pay_success
+      BasicEvent support_fail pay_success
     | Some b =>
       accept;
       am = _amount;
@@ -120,14 +131,8 @@ procedure SendToResource( name : String)
       bal <- _balance;
       zbal = builtin div bal convert_zil;
       total_funded := zbal; 
-      GenericEvent pay_success pay_success
+      BasicEvent pay_success pay_success
   end
-end
-(* Adding donation amount to total*)
-procedure AddAmountTotal()
-  bal <- _balance;
-  newtot = builtin div bal convert_zil;
-  total_funded := newtot
 end
 
 (* Adding/removing people *)
@@ -149,17 +154,48 @@ procedure AddFan(name : String)
       send msgs 
   end
 end
+
 (* Adding member to list*)
 procedure AddNewMember(address : ByStr20, name : String)
   wield_dragon <- exists members[address];
   match wield_dragon with 
-    | False =>
-      (* Add member *)
-      members[address] := name;
-      GenericEvent added added
-    | True => 
-      (* already added *)
-      GenericEvent already_member added
+  | True =>
+    BasicEvent already_member added
+  |False => 
+    (* Add member *)
+    members[address] := name;
+    BasicEvent added added
+  end
+end
+
+(* updating member from list*)
+procedure UpdateExistingMember(address : ByStr20, name : String)
+  wield_dragon <- exists members[_sender];
+  match wield_dragon with 
+  | True =>
+    members[address] := name;
+    BasicEvent updated updated
+  |False => 
+    BasicEvent not_found added
+  end
+end
+
+(* Rmeoving member from list*)
+procedure RemoveExistingMember(address : ByStr20, name : String)
+wield_dragon <- exists members[_sender];
+  match wield_dragon with 
+    | True =>
+      bronze <- exists members[address];
+      match bronze with
+        | True =>
+        members[address] := name;
+        BasicEvent added added
+        |False => 
+        BasicEvent not_found added
+      end
+    | False => 
+      (* Not a member *)
+      BasicEvent unauthorized added
   end
 end
 
@@ -171,12 +207,12 @@ transition AddResource( title: String, resource : String )
   is_owner = builtin eq owner _sender;
   match is_owner with
   | False =>
-    GenericEvent unauthorized added
+    BasicEvent unauthorized added
   | True =>
     b_resources[title] := resource;
     zer = Uint128 0;
     resources_support[title] := zer;
-    GenericEvent added added
+    BasicEvent added added
   end
 end
 
@@ -186,10 +222,10 @@ transition RemoveResource( title: String)
   is_owner = builtin eq owner _sender;
   match is_owner with
   | False =>
-    GenericEvent unauthorized removed
+    BasicEvent unauthorized removed
   | True =>
     delete b_resources[title];
-    GenericEvent removed removed
+    BasicEvent removed removed
   end
 end
 (*[OwnerOnly]*)
@@ -198,15 +234,15 @@ transition UpdateResource( title: String,newres : String)
   is_owner = builtin eq owner _sender;
   match is_owner with
   | False =>
-    GenericEvent unauthorized updated
+    BasicEvent unauthorized updated
   | True =>
     us <- exists b_resources[title];
     match us with
     | True =>
     b_resources[title] := newres;
-    GenericEvent updated updated
+    BasicEvent updated updated
     | False =>
-    GenericEvent update_fail updated
+    BasicEvent update_fail updated
     end
   end
 end
@@ -217,11 +253,11 @@ transition ChangeMail( mail: String)
   is_owner = builtin eq owner _sender;
   match is_owner with
   | False =>
-    GenericEvent forbidden mail_changed
+    BasicEvent forbidden mail_changed
   | True =>
     m = mail;
     curr_email := m;
-    GenericEvent mail_changed mail_changed
+    BasicEvent mail_changed mail_changed
   end
 end
 
@@ -232,7 +268,7 @@ transition WithdrawFunds ()
   is_owner = builtin eq owner _sender;
   match is_owner with
   | False =>
-    GenericEvent forbidden pay_success
+    BasicEvent forbidden pay_success
   | True =>
     PerformWithdrawFunds
   end
@@ -244,7 +280,20 @@ transition AddMember(address : ByStr20, name : String)
   match is_member with
   | False =>
     (* Event fail AddMemberEvent*)
-    GenericEvent unauthorized added
+    BasicEvent unauthorized added
+  | True =>
+    (*Check if address is not in *)
+    AddNewMember address name
+  end
+end
+(*[OwnerOnly]*)
+(*Updates member to organisation*)
+transition UpdateMember(address : ByStr20, name : String)
+  is_member <- exists members[_sender];
+  match is_member with
+  | False =>
+    (* Event fail AddMemberEvent*)
+    BasicEvent unauthorized added
   | True =>
     (*Check if address is not in *)
     AddNewMember address name
@@ -276,6 +325,6 @@ transition SupportResource ( name : String )
     SendToResource name;
     AddAmountTotal
   | False =>
-    GenericEvent support_fail pay_success
+    BasicEvent support_fail pay_success
   end
 end

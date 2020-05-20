@@ -19,20 +19,32 @@ let not_empty =
   let empt = "" in
   builtin eq empt str
     
+  (* Success *)  
   let pay_failure = Int32 1 
   let pay_success = Int32 2
-  let already_backed_code = Int32 3
+  let already_member = Int32 3
   let funds_withdrawn = Int32 42
-  let cannot_get_funds = Int32 404
-  let not_owner_code = Int32 400
-  let sketch_added = Int32 92
-  let sketch_removed = Int32 91
-  let sketch_updated = Int32 91
+  let removed = Int32 91
+  let added = Int32 92
+  let updated = Int32 98
   let fan_added = Int32 96
   let mail_changed = Int32 993
-  let sketch_add_fail = Int32 501
-  let sketch_update_fail = Int32 502
-  let sketch_support_fail = Int32 503
+  
+  (* http codes*)
+  let unauthorized = Int32 400
+  let forbidden = Int32 403
+  let not_found = Int32 403
+  let server_error = Int32 500
+  (* The lemongrab code is a must!!!*)
+  let unacceptable = Int32 406
+  (* Custom *)
+  let add_fail = Int32 701
+  let remove_fail = Int32 702
+  let update_fail = Int32 703
+  let support_fail = Int32 704
+  let big_spender = Int32 9000
+  
+  (* Misc *)
   let convert_zil = Uint128 1000000000000
 
 
@@ -49,102 +61,53 @@ origin_mail :String)
 
 (* Mutable fields *)
 field b_sketches : Map String String = Emp String String
+field fans : Map String Uint128 = Emp String Uint128
+field curr_email : String = origin_mail
+field members : Map ByStr20 String = Emp ByStr20 String
+(* Funds *)
+field total_funded : Uint128 = Uint128 0
+field total_withdrawn : Uint128 = Uint128 0
 field sketches_support : Map String Uint128 = Emp String Uint128
 field backers : Map ByStr20 Uint128 = Emp ByStr20 Uint128
-field fans : Map String Uint128 = Emp String Uint128
-field total_funded : Uint128 = Uint128 0
-field curr_email : String = origin_mail
 
 (*Events*)
-procedure AddSketchEvent (error_code : Int32)
-  success = builtin eq error_code sketch_added;
+procedure BasicEvent (error_code : Int32,exp : Int32)
+  success = builtin eq error_code exp;
   match success with
   | True =>
-      e = {_eventname : "Addsketchesuccess"; caller : _sender;
+      e = {_eventname : "Success"; caller : _sender;
          amount : _amount; code : error_code};
          event e
   | False =>
-      e = {_eventname : "AddsketchFailed"; caller : _sender;
+      e = {_eventname : "Fail"; caller : _sender;
          amount : _amount; code : error_code};
-         event e
-  end
-end
-procedure RemoveSketchEvent (error_code : Int32)
-  success = builtin eq error_code sketch_removed;
-  match success with
-  | True =>
-      e = {_eventname : "Removesketchesuccess"; caller : _sender;
-         amount : _amount; code : error_code};
-         event e
-  | False =>
-      e = {_eventname : "RemovesketchFailed"; caller : _sender;
-         amount : _amount; code : error_code};
-         event e
-  end
-end
-procedure UpdateSketchEvent (error_code : Int32)
-  success = builtin eq error_code sketch_updated;
-  match success with
-  | True =>
-      e = {_eventname : "UpdateSketchSuccess"; caller : _sender;
-         amount : _amount; code : error_code};
-         event e
-  | False =>
-      e = {_eventname : "UpdateSketchFailed"; caller : _sender;
-         amount : _amount; code : error_code};
-         event e
-  end
-end
-procedure DonationEvent (failure : Bool)
-  match failure with
-  | True =>
-      e = {_eventname : "DonationSuccess"; donor : _sender;
-         amount : _amount; code : already_backed_code};
-         event e
-  | False =>
-      e = {_eventname : "DonationSuccess"; donor : _sender;
-         amount : _amount; code : pay_success};
          event e
   end
 end
 
-procedure WithdrawFundsFailure (error_code : Int32)
-  e = {_eventname : "GetFundsFailure"; caller : _sender;
-       amount : _amount; code : error_code};
+(* Donations*)
+procedure DonationEvent (failure : Bool)
+  e = {_eventname : "DonationSuccess"; donor : _sender;
+  amount : _amount; code : pay_success};
   event e
 end
 
-procedure SupportSketchEvent (error_code : Int32)
-  success = builtin eq error_code pay_success;
-  match success with
-  | True =>
-      e = {_eventname : "Supportsketchesuccess"; supporter : _sender;
-         amount : _amount; code : error_code};
-         event e
-  | False =>
-      e = {_eventname : "SupportsketchFailed"; supporter : _sender;
-         amount : _amount; code : error_code};
-         event e
-  end
+(* Funds procedures*)
+
+(* Adding donation amount to total*)
+procedure AddAmountTotal()
+  tf <- _balance;
+  newtot = builtin div tf convert_zil;
+  total_funded := newtot
 end
 
-procedure ChangeMailEvent (error_code : Int32)
-  success = builtin eq error_code mail_changed;
-  match success with
-  | True =>
-      e = {_eventname : "ChangeMailEvent"; supporter : _sender;
-         amount : _amount; code : error_code};
-         event e
-  | False =>
-      e = {_eventname : "ChangeMailEvent"; supporter : _sender;
-         amount : _amount; code : error_code};
-         event e
-  end
-end
-
-(*Private methods or smth alike*)
+(* Withdraw funds from contract *)
 procedure PerformWithdrawFunds()
   bal <- _balance;
+  tw <- total_withdrawn;
+  tot = builtin add bal tw;
+  ztot = builtin div tot convert_zil; 
+  total_withdrawn := ztot;
   msg = { _tag : ""; _recipient : owner; _amount : bal; code : funds_withdrawn};
   msgs = one_msg msg;
   send msgs
@@ -173,78 +136,82 @@ procedure SendToSketch( name : String)
   s <- sketches_support[name];
   match s with
     | None =>
-      SupportSketchEvent sketch_support_fail
+      BasicEvent support_fail  pay_success
     | Some b =>
       accept;
+      bal <- _balance;
+      newtot = builtin div bal convert_zil;
+      AddAmountTotal;
+      
       am = _amount;
       zila = builtin div am convert_zil;
       tot = builtin add b zila;
       sketches_support[name] := tot; 
-      bal <- _balance;
-      zbal = builtin div bal convert_zil;
-      total_funded := zbal; 
-      SupportSketchEvent pay_success
+      
+      BasicEvent pay_success  pay_success
   end
 end
 
 (*Transitions*)
 
 (*[OwnerOnly]*)
-(*Add sketch with title and resource should point to a resource like url*)
+(*Add resource with title and resource should point to a resource like url*)
 transition AddSketch( title: String, resource : String )
   is_owner = builtin eq owner _sender;
   match is_owner with
   | False =>
-    AddSketchEvent not_owner_code
+    BasicEvent unauthorized  added
   | True =>
     b_sketches[title] := resource;
     zer = Uint128 0;
     sketches_support[title] := zer;
-    AddSketchEvent sketch_added
+    BasicEvent added  added
   end
 end
 
 (*[OwnerOnly]*)
-(*Removes sketch by title*)
+(*Removes resource by title*)
 transition RemoveSketch( title: String)
   is_owner = builtin eq owner _sender;
   match is_owner with
   | False =>
-    RemoveSketchEvent not_owner_code
+    BasicEvent unauthorized  removed
   | True =>
     delete b_sketches[title];
-    RemoveSketchEvent sketch_removed
+    BasicEvent removed  removed
   end
 end
+
 (*[OwnerOnly]*)
-(*Updates sketch by title*)
+(*Updates resource by title*)
 transition UpdateSketch( title: String,newres : String)
   is_owner = builtin eq owner _sender;
   match is_owner with
   | False =>
-    UpdateSketchEvent not_owner_code
+    BasicEvent unauthorized  updated
   | True =>
     us <- exists b_sketches[title];
     match us with
     | True =>
     b_sketches[title] := newres;
-    UpdateSketchEvent sketch_updated
+    BasicEvent updated updated
     | False =>
-    UpdateSketchEvent sketch_update_fail
+    BasicEvent update_fail updated
     end
   end
 end
+
 (*[OwnerOnly]*)
 (*Changes curr_mail*)
 transition ChangeMail( mail: String)
   is_owner = builtin eq owner _sender;
   match is_owner with
   | False =>
-    ChangeMailEvent not_owner_code
+      BasicEvent unauthorized mail_changed
   | True =>
     m = mail;
     curr_email := m;
-    ChangeMailEvent mail_changed
+    BasicEvent mail_changed mail_changed
   end
 end
 
@@ -254,7 +221,7 @@ transition WithdrawFunds ()
   is_owner = builtin eq owner _sender;
   match is_owner with
   | False =>
-    WithdrawFundsFailure not_owner_code
+      BasicEvent forbidden funds_withdrawn
   | True =>
     PerformWithdrawFunds
   end
@@ -265,27 +232,29 @@ transition Donate ( name : String )
   o <- exists backers[_sender];
   b <- backers[_sender];
   AddFan name;
+  
   bal <- _balance;
   newtot = builtin div bal convert_zil;
-  total_funded := newtot;    
+  AddAmountTotal;
+  
   match b with
   | None =>
     backers[_sender] := _amount;
-    DonationEvent o
+    BasicEvent pay_success pay_success
   | Some b =>
     tot = builtin add b _amount;
     backers[_sender] := tot;
-    DonationEvent o
+    BasicEvent big_spender big_spender
   end
 end
 
-(*Support sketch by name*)
+(*Support resource by name*)
 transition SupportSketch ( name : String )
   o <- exists sketches_support[name];
   match o with 
   | True =>
     SendToSketch name
   | False =>
-    SupportSketchEvent sketch_support_fail
+      BasicEvent support_fail pay_success
   end
 end
