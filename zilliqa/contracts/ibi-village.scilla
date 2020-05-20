@@ -1,0 +1,281 @@
+(***************************************************)
+(*                 Scilla version                  *)
+(***************************************************)
+
+scilla_version 0
+
+(***************************************************)
+(*               Associated library                *)
+(***************************************************)
+(* By Musenzi Solutions for https://www.ibi-village.cd *)
+library Ibi_Village
+
+let one_msg =
+  fun (msg : Message) =>
+  let nil_msg = Nil {Message} in
+    Cons {Message} msg nil_msg
+
+let not_empty = 
+  fun (str : String) =>
+  let empt = "" in
+  builtin eq empt str
+  
+  (* Success *)  
+  let pay_failure = Int32 1 
+  let pay_success = Int32 2
+  let already_member = Int32 3
+  let funds_withdrawn = Int32 42
+  let removed = Int32 91
+  let added = Int32 92
+  let updated = Int32 98
+  let fan_added = Int32 96
+  let mail_changed = Int32 993
+  
+  (* http codes*)
+  let unauthorized = Int32 400
+  let forbidden = Int32 403
+  let not_found = Int32 403
+  let not_found = Int32 500
+  (* The lemongrab code is a must!!!*)
+  let unacceptable = Int32 406
+  (* Custom *)
+  let add_fail = Int32 701
+  let update_fail = Int32 702
+  let support_fail = Int32 703
+  let big_spender = Int32 9000
+  
+  (* Misc *)
+  let convert_zil = Uint128 1000000000000
+
+
+(***************************************************)
+(*             The contract definition             *)
+(***************************************************)
+(* 
+  Note: learn better use of libs & procs for reuse,
+  this could be shorter!! 
+*)
+contract Ibi_Village
+
+(*  Parameters *)
+(owner:ByStr20,
+organisation: String,
+description:String,
+origin_mail :String)
+
+(* Mutable fields *)
+field b_resources : Map String String = Emp String String
+field resources_support : Map String Uint128 = Emp String Uint128
+field backers : Map ByStr20 Uint128 = Emp ByStr20 Uint128
+field fans : Map String Uint128 = Emp String Uint128
+field total_funded : Uint128 = Uint128 0
+field curr_email : String = origin_mail
+field members : Map ByStr20 String = Emp ByStr20 String
+
+
+(*Events*)
+procedure GenericEvent (error_code : Int32,exp : Int32)
+  success = builtin eq error_code exp;
+  match success with
+  | True =>
+      e = {_eventname : "Success"; caller : _sender;
+         amount : _amount; code : error_code};
+         event e
+  | False =>
+      e = {_eventname : "Fail"; caller : _sender;
+         amount : _amount; code : error_code};
+         event e
+  end
+end
+
+
+(* Donations*)
+procedure DonationEvent (failure : Bool)
+  e = {_eventname : "DonationSuccess"; donor : _sender;
+  amount : _amount; code : pay_success};
+  event e
+end
+
+(*Private methods or smth alike*)
+
+procedure PerformWithdrawFunds()
+  bal <- _balance;
+  
+  msg = { _tag : ""; _recipient : owner; _amount : bal; code : funds_withdrawn};
+  msgs = one_msg msg;
+  send msgs
+end
+
+procedure SendToResource( name : String)
+  s <- resources_support[name];
+  match s with
+    | None =>
+      GenericEvent support_fail pay_success
+    | Some b =>
+      accept;
+      am = _amount;
+      zila = builtin div am convert_zil;
+      tot = builtin add b zila;
+      resources_support[name] := tot; 
+      bal <- _balance;
+      zbal = builtin div bal convert_zil;
+      total_funded := zbal; 
+      GenericEvent pay_success pay_success
+  end
+end
+(* Adding donation amount to total*)
+procedure AddAmountTotal()
+  bal <- _balance;
+  newtot = builtin div bal convert_zil;
+  total_funded := newtot
+end
+
+(* Adding/removing people *)
+procedure AddFan(name : String)
+  fo <- exists fans[name];
+  f <- fans[name];
+  
+  match f with 
+    | None =>
+      fans[name] := _amount;
+      msg = { _tag : ""; _recipient : _sender; _amount: Uint128 0; code : fan_added};
+      msgs = one_msg msg;
+      send msgs
+    | Some fan =>
+      all = builtin add _amount fan;
+      fans[name] := all;
+      msg = { _tag : ""; _recipient : _sender; _amount: Uint128 0; code : pay_success};
+      msgs = one_msg msg;
+      send msgs 
+  end
+end
+(* Adding member to list*)
+procedure AddNewMember(address : ByStr20, name : String)
+  wield_dragon <- exists members[address];
+  match wield_dragon with 
+    | False =>
+      (* Add member *)
+      members[address] := name;
+      GenericEvent added added
+    | True => 
+      (* already added *)
+      GenericEvent already_member added
+  end
+end
+
+(*Transitions*)
+
+(*[OwnerOnly]*)
+(*Add resource with title and resource should point to a resource like url*)
+transition AddResource( title: String, resource : String )
+  is_owner = builtin eq owner _sender;
+  match is_owner with
+  | False =>
+    GenericEvent unauthorized added
+  | True =>
+    b_resources[title] := resource;
+    zer = Uint128 0;
+    resources_support[title] := zer;
+    GenericEvent added added
+  end
+end
+
+(*[OwnerOnly]*)
+(*Removes resource by title*)
+transition RemoveResource( title: String)
+  is_owner = builtin eq owner _sender;
+  match is_owner with
+  | False =>
+    GenericEvent unauthorized removed
+  | True =>
+    delete b_resources[title];
+    GenericEvent removed removed
+  end
+end
+(*[OwnerOnly]*)
+(*Updates resource by title*)
+transition UpdateResource( title: String,newres : String)
+  is_owner = builtin eq owner _sender;
+  match is_owner with
+  | False =>
+    GenericEvent unauthorized updated
+  | True =>
+    us <- exists b_resources[title];
+    match us with
+    | True =>
+    b_resources[title] := newres;
+    GenericEvent updated updated
+    | False =>
+    GenericEvent update_fail updated
+    end
+  end
+end
+
+(*[OwnerOnly]*)
+(*Changes curr_mail*)
+transition ChangeMail( mail: String)
+  is_owner = builtin eq owner _sender;
+  match is_owner with
+  | False =>
+    GenericEvent forbidden mail_changed
+  | True =>
+    m = mail;
+    curr_email := m;
+    GenericEvent mail_changed mail_changed
+  end
+end
+
+(*[OwnerOnly]*)
+(*Withdraw all funds from contract*)
+(* maybe open to all members...*)
+transition WithdrawFunds ()
+  is_owner = builtin eq owner _sender;
+  match is_owner with
+  | False =>
+    GenericEvent forbidden pay_success
+  | True =>
+    PerformWithdrawFunds
+  end
+end
+(*[OwnerOnly]*)
+(*Adds member to organisation*)
+transition AddMember(address : ByStr20, name : String)
+  is_member <- exists members[_sender];
+  match is_member with
+  | False =>
+    (* Event fail AddMemberEvent*)
+    GenericEvent unauthorized added
+  | True =>
+    (*Check if address is not in *)
+    AddNewMember address name
+  end
+end
+
+transition Donate ( name : String )
+  accept;
+  o <- exists backers[_sender];
+  b <- backers[_sender];
+  AddFan name;
+  AddAmountTotal;
+  match b with
+  | None =>
+    backers[_sender] := _amount;
+    DonationEvent o
+  | Some b =>
+    tot = builtin add b _amount;
+    backers[_sender] := tot;
+    DonationEvent o
+  end
+end
+
+(*Support resource by name*)
+transition SupportResource ( name : String )
+  o <- exists resources_support[name];
+  match o with 
+  | True =>
+    SendToResource name;
+    AddAmountTotal
+  | False =>
+    GenericEvent support_fail pay_success
+  end
+end

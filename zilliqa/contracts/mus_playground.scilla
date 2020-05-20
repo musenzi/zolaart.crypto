@@ -1,0 +1,350 @@
+(***************************************************)
+(*                 Scilla version                  *)
+(***************************************************)
+
+scilla_version 0
+
+(***************************************************)
+(*               Associated library                *)
+(***************************************************)
+(* By Musenzi Solutions for trying out things*)
+library Mus_Playground
+
+let one_msg =
+  fun (msg : Message) =>
+  let nil_msg = Nil {Message} in
+    Cons {Message} msg nil_msg
+
+let not_empty = 
+  fun (str : String) =>
+  let empt = "" in
+  builtin eq empt str
+  
+  (* Success *)  
+  let pay_failure = Int32 1 
+  let pay_success = Int32 2
+  let already_member = Int32 3
+  let funds_withdrawn = Int32 42
+  let removed = Int32 91
+  let added = Int32 92
+  let updated = Int32 98
+  let fan_added = Int32 96
+  let mail_changed = Int32 993
+  
+  (* http codes*)
+  let unauthorized = Int32 400
+  let forbidden = Int32 403
+  let not_found = Int32 403
+  let server_error = Int32 500
+  (* The lemongrab code is a must!!!*)
+  let unacceptable = Int32 406
+  (* Custom *)
+  let add_fail = Int32 701
+  let remove_fail = Int32 702
+  let update_fail = Int32 703
+  let support_fail = Int32 704
+  let big_spender = Int32 9000
+  
+  (* Misc *)
+  let convert_zil = Uint128 1000000000000
+
+
+(***************************************************)
+(*             The contract definition             *)
+(***************************************************)
+(* 
+  Note: learn better use of libs & procs for reuse,
+  this could be shorter!! 
+*)
+contract Mus_Playground
+
+(*  Parameters *)
+(owner:ByStr20,
+organisation: String,
+description:String,
+origin_mail :String)
+
+(* Mutable fields *)
+field backers : Map ByStr20 Uint128 = Emp ByStr20 Uint128
+field fans : Map String Uint128 = Emp String Uint128
+field total_funded : Uint128 = Uint128 0
+field total_withdrawn : Uint128 = Uint128 0
+field curr_email : String = origin_mail
+field members : Map ByStr20 String = Emp ByStr20 String
+
+(* Repo name to match in func [learn regex to optimize]*)
+field repo1_name : String = "Repo One"
+field repo2_name : String = "Repo Two"
+(* Repos *)
+field repo1 : Map String String = Emp String String
+field repo2 : Map String String = Emp String String
+(*support for donations per repo*)
+field repo1_support : Map String Uint128 = Emp String Uint128
+field repo2_support : Map String Uint128 = Emp String Uint128
+
+(*Events*)
+procedure GenericEvent (error_code : Int32,exp : Int32)
+  success = builtin eq error_code exp;
+  match success with
+  | True =>
+      e = {_eventname : "Success"; caller : _sender;
+         amount : _amount; code : error_code};
+         event e
+  | False =>
+      e = {_eventname : "Fail"; caller : _sender;
+         amount : _amount; code : error_code};
+         event e
+  end
+end
+
+(* Funds procedures*)
+
+(* Adding donation amount to total*)
+procedure AddAmountTotal(am : Uint128)
+  tf <- total_funded;
+  newtot = builtin add am tf;
+  total_funded := newtot
+end
+
+(* Withdraw funds from contract *)
+procedure PerformWithdrawFunds()
+  bal <- _balance;
+  tw <- total_withdrawn;
+  tot = builtin add bal tw;
+  total_withdrawn := tot;
+  msg = { _tag : ""; _recipient : owner; _amount : bal; code : funds_withdrawn};
+  msgs = one_msg msg;
+  send msgs
+end
+
+(*Support Resource on repo*)
+procedure SendToResource( repo : String, amount : Uint128)
+(* Divide on repo and add resource to repo*)
+  (* Zilliqa teach me the ways of design see Handle func*)
+  r1 <- repo1_name;
+  r2 <- repo2_name;
+  or1 = builtin eq repo r1;
+  or2 = builtin eq repo r2;
+  zila = builtin div amount convert_zil;
+  
+  GenericEvent not_found pay_success
+  (*
+    match or1 with
+    | True => 
+      s1 <- repo1_support[title];
+      so1 <- exists repo1_support[title];
+      match so1 with
+        | True =>
+            accept;
+            s1t = builtin to_uint128 s1;
+            tot = builtin add s1t zila;
+            repo1_support[title] := tot; 
+            AddAmountTotal amount;
+            GenericEvent pay_success pay_success
+          
+        | False => 
+              match or2 with
+              | True => 
+                s2 <- repo2_support[title];
+                so2 <- exists repo2_support[title];
+                match so2 with
+                | True =>
+                  accept;
+                  tot = builtin add s2 zila;
+                  repo2_support[title] := tot; 
+                  AddAmountTotal amount;
+                  GenericEvent pay_success pay_success
+                | False => 
+                  GenericEvent support_fail pay_success
+                end
+              end
+      end 
+  end
+  *)
+  
+end
+
+(* Method handling *)
+
+(* Handles add to repo, repos need to be added at init*)
+procedure HandleAdd(repo : String, title : String, res : String)
+  (* Divide on repo and add resource to repo*)
+  (* Zilliqa teach me the ways of design see Handle func*)
+  r1 <- repo1_name;
+  r2 <- repo2_name;
+  or1 = builtin eq repo r1;
+  or2 = builtin eq repo r2;
+  match or1 with
+    | True => 
+      repo1[title] := res;
+      GenericEvent added added
+      | False => 
+        match or2 with
+        | True =>
+          repo2[title] := res;
+          GenericEvent added added
+          | False =>
+            GenericEvent add_fail added
+        end
+  end
+end
+
+
+(* Handles remove from repo, repos need to be added at init*)
+procedure HandleRemove(repo : String, title : String, res : String)
+  (* Divide on repo and add resource to repo*)
+  (* Zilliqa teach me the ways of design see Handle func*)
+  r1 <- repo1_name;
+  r2 <- repo2_name;
+  or1 = builtin eq repo r1;
+  or2 = builtin eq repo r2;
+  match or1 with
+    | True => 
+      delete repo1[title];
+      GenericEvent removed removed
+      | False => 
+        match or2 with
+        | True =>
+          delete repo2[title];
+          GenericEvent removed removed
+          | False =>
+            GenericEvent remove_fail removed
+        end
+  end
+end
+
+(* Handles updates to repo, repos need to be added at init*)
+procedure HandleUpdate(repo : String, title : String, res : String)
+  (* Divide on repo and update resource with title to repo*)
+  (* Zilliqa teach me the ways of design see Handle func*)
+  r1 <- repo1_name;
+  r2 <- repo2_name;
+  or1 = builtin eq repo r1;
+  or2 = builtin eq repo r2;
+  match or1 with
+    | True => 
+      repo1[title] := res;
+      GenericEvent updated updated
+      | False => 
+        match or2 with
+        | True =>
+          repo2[title] := res;
+          GenericEvent updated updated
+          | False =>
+            GenericEvent update_fail added
+        end
+  end
+end
+
+procedure Handle(method : String, repo : String, title : String, res : String)
+  (* divide and conquer*)
+  (* I know this can be done more efficiently! I need a crashcourse in design!*)
+  (* If you can make it less do it think of gas!*)
+  (* First split on method*)
+  ar = "ADD";
+  rr = "REMOVE";
+  ur = "UPDATE";
+  oa = builtin eq method ar;
+  or = builtin eq method rr;
+  ou = builtin eq method ur;
+  
+  match oa with
+    | True => 
+      HandleAdd repo title res
+    |False =>
+        match or with
+        | True => 
+          HandleRemove repo title res
+        |False =>
+            match ou with
+            | True => 
+              HandleUpdate repo title res
+            |False => 
+              GenericEvent add_fail added
+            end
+        end
+  end
+end
+
+
+
+(*Transitions*)
+
+(*[OwnerOnly]*)
+(*Add resource with title and resource should point to a resource like url*)
+transition Add( repo : String, title: String, resource : String )
+  is_owner = builtin eq owner _sender;
+  match is_owner with
+  | False =>
+    GenericEvent unauthorized added
+  | True =>
+    (* Proc that handles calls *)
+    method = "ADD";
+    Handle method repo title resource
+  end
+end
+
+(*[OwnerOnly]*)
+(*Removes resource by title*)
+transition Remove( repo : String, title: String)
+  is_owner = builtin eq owner _sender;
+  match is_owner with
+  | False =>
+    GenericEvent unauthorized added
+  | True =>
+    (* Proc that handles calls *)
+    method = "REMOVE";
+    Handle method repo title method
+  end
+end
+(*[OwnerOnly]*)
+(*Updates resource by title*)
+transition Update( repo : String, title: String, newres : String)
+  is_owner = builtin eq owner _sender;
+  match is_owner with
+  | False =>
+    GenericEvent unauthorized added
+  | True =>
+    (* Proc that handles calls *)
+    method = "UPDATE";
+    Handle method repo title newres
+  end
+end
+
+(*Funding transitions*)
+
+(*[OwnerOnly]*)
+(*Withdraw all funds from contract*)
+transition WithdrawFunds ()
+  is_owner = builtin eq owner _sender;
+  match is_owner with
+  | False =>
+    GenericEvent forbidden pay_success
+  | True =>
+    PerformWithdrawFunds
+  end
+end
+
+(* [Interaction] *)
+(* Donate to contract*)
+transition Donate ()
+  accept;
+  b <- backers[_sender];
+  AddAmountTotal _amount;
+  match b with
+  | None =>
+    backers[_sender] := _amount;
+    GenericEvent pay_success pay_success
+  | Some b =>
+    tot = builtin add b _amount;
+    backers[_sender] := tot;
+    GenericEvent big_spender big_spender
+  end
+end
+
+(* [Interaction] *)
+(*Support project by name & repo *)
+transition SupportProject ( repo: String)
+  (* Checks?? *)
+  SendToResource repo _amount
+end
