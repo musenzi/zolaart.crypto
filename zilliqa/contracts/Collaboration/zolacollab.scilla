@@ -202,8 +202,8 @@ end
 (*[OwnerOnly]*)
 (*Add resource with title and resource should point to a resource like url*)
 transition AddResource( title: String, resource : String )
-  is_owner = builtin eq owner _sender;
-  match is_owner with
+  is_member <- exists members[_sender];
+  match is_member with
   | False =>
     BasicEvent unauthorized  added
   | True =>
@@ -217,8 +217,8 @@ end
 (*[OwnerOnly]*)
 (*Removes resource by title*)
 transition RemoveResource( title: String)
-  is_owner = builtin eq owner _sender;
-  match is_owner with
+  is_member <- exists members[_sender];
+  match is_member with
   | False =>
     BasicEvent unauthorized  removed
   | True =>
@@ -230,8 +230,8 @@ end
 (*[OwnerOnly]*)
 (*Updates resource by title*)
 transition UpdateResource( title: String,newres : String)
-  is_owner = builtin eq owner _sender;
-  match is_owner with
+  is_member <- exists members[_sender];
+  match is_member with
   | False =>
     BasicEvent unauthorized  updated
   | True =>
