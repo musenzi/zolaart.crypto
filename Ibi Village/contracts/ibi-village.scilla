@@ -126,8 +126,7 @@ procedure SendToResource( name : String)
       tot = builtin add b _amount;
       resources_support[name] := tot; 
       bal <- _balance;
-      zbal = builtin div bal convert_zil;
-      total_funded := zbal; 
+      total_funded := bal; 
       BasicEvent pay_success pay_success
   end
 end
@@ -177,7 +176,7 @@ procedure UpdateExistingMember(address : ByStr20, name : String)
   end
 end
 
-(* Rmeoving member from list*)
+(* Removing member from list*)
 procedure RemoveExistingMember(address : ByStr20, name : String)
 wield_dragon <- exists members[_sender];
   match wield_dragon with 
@@ -270,32 +269,6 @@ transition WithdrawFunds ()
     PerformWithdrawFunds
   end
 end
-(*[OwnerOnly]*)
-(*Adds member to organisation*)
-transition AddMember(address : ByStr20, name : String)
-  is_member <- exists members[_sender];
-  match is_member with
-  | False =>
-    (* Event fail AddMemberEvent*)
-    BasicEvent unauthorized added
-  | True =>
-    (*Check if address is not in *)
-    AddNewMember address name
-  end
-end
-(*[OwnerOnly]*)
-(*Updates member to organisation*)
-transition UpdateMember(address : ByStr20, name : String)
-  is_member <- exists members[_sender];
-  match is_member with
-  | False =>
-    (* Event fail AddMemberEvent*)
-    BasicEvent unauthorized added
-  | True =>
-    (*Check if address is not in *)
-    AddNewMember address name
-  end
-end
 
 transition Donate ( name : String )
   accept;
@@ -323,5 +296,48 @@ transition SupportResource ( name : String )
     AddAmountTotal _amount
   | False =>
     BasicEvent support_fail pay_success
+  end
+end
+
+(* Dragon wielders*)
+
+(*[Members only]*)
+(*Adds member to organisation*)
+transition AddMember(address : ByStr20, name : String)
+  is_member <- exists members[_sender];
+  match is_member with
+  | False =>
+    (* Event fail AddMemberEvent*)
+    BasicEvent unauthorized added
+  | True =>
+    (*Check if address is not in *)
+    AddNewMember address name
+  end
+end
+(*[Members only]*)
+(*Updates member to organisation*)
+transition UpdateMember(address : ByStr20, name : String)
+  is_member <- exists members[_sender];
+  match is_member with
+  | False =>
+    (* Event fail AddMemberEvent*)
+    BasicEvent unauthorized added
+  | True =>
+    (*Check if address is not in *)
+    AddNewMember address name
+  end
+end
+
+(*[Members only]*)
+(*Updates member to organisation*)
+transition RemoveMember(address : ByStr20, name : String)
+  is_member <- exists members[_sender];
+  match is_member with
+  | False =>
+    (* Event fail AddMemberEvent*)
+    BasicEvent unauthorized added
+  | True =>
+    (*Check if address is not in *)
+    RemoveExistingMember address name
   end
 end
